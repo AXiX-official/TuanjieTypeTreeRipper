@@ -180,7 +180,7 @@ public:
                         // "THX_Proxy" (what is this) can't be created, so it returns nothing.
                         // but it also is not abstract, curious!
                         if (object) {
-                            GenerateTypeTreeTransfer transfer(&tree, flags, object, pRTTI->size);
+                            GenerateTypeTreeTransfer transfer(tree, flags, object, pRTTI->size);
                             object->VirtualRedirectTransfer(transfer);
                         }
                     }

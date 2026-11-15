@@ -228,11 +228,21 @@ extern "C" __declspec(dllexport) BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD f
 {
     if (fdwReason == DLL_PROCESS_ATTACH)
     {
-        FAIL_FAST_IF_WIN32_ERROR(DetourTransactionBegin());
+        /*FAIL_FAST_IF_WIN32_ERROR(DetourTransactionBegin());
         *(void **)&pSetWindowLongPtrA = GetProcAddress(GetModuleHandleW(L"USER32"), "SetWindowLongPtrA");
         FAIL_FAST_IF_WIN32_ERROR(DetourAttach((void **)&pSetWindowLongPtrA, &DetourSetWindowLongPtrA));
-        FAIL_FAST_IF_WIN32_ERROR(DetourTransactionCommit());
+        FAIL_FAST_IF_WIN32_ERROR(DetourTransactionCommit());*/
     }
 
     return TRUE;
+}
+
+extern "C" __declspec(dllexport) void __stdcall StartNativeDump()
+{
+    const auto revision = DetectRevision();
+    const auto variant = DetectVariant();
+
+    RunDumper<WindowsDumper>(revision, variant);
+    
+    TerminateProcess(GetCurrentProcess(), 0);
 }

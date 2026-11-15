@@ -217,6 +217,7 @@ DEFINE_REVISION(class, TypeTreeIterator, Revision::V2019_1_0)
     TypeTree<R, V> const *m_LinkedTypeTree;
     TypeTreeShareableData<R, V> const *m_TypeTreeData;
     uint64_t m_NodeIndex;
+    uint8_t padding[8];
 public:
     TypeTreeIterator(TypeTree<R, V> const *tree, TypeTreeShareableData<R, V> const *data, uint64_t nodeIndex) :
         m_LinkedTypeTree(tree),

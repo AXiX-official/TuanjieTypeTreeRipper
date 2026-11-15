@@ -182,4 +182,7 @@ protected:
     void const *m_BuildUsageTag = nullptr;
     void const *m_GlobalBuildData = nullptr;
     bool m_MissingManagedTypes = false;
+    uint8_t padding[0x37];
+public:
+    virtual ~TransferBase() = default;
 };
