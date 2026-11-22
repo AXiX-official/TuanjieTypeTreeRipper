@@ -1,4 +1,6 @@
-# TypeTreeRipper
+# TuanjieTypeTreeRipper
+
+`Tuanjie` specified version of [TypeTreeRipper](https://github.com/DaZombieKiller/TypeTreeRipper).
 
 An experimental C++ alternative to [TypeTreeDumper](https://github.com/DaZombieKiller/TypeTreeDumper) that does not require symbols.
 
