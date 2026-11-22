@@ -5,7 +5,7 @@
 template<Revision R, Variant V>
 struct dynamic_array_traits;
 
-DECLARE_REVISION(dynamic_array_traits, Revision::V2018_3_0);
+DECLARE_REVISION(dynamic_array_traits, Revision::V0_0_0_0);
 
 template<Revision R, Variant V>
 struct dynamic_array_traits
@@ -16,7 +16,7 @@ struct dynamic_array_traits
     static constexpr size_t k_capacity_shift = 0;
 };
 
-DEFINE_REVISION(struct, dynamic_array_traits, Revision::V2018_3_0)
+DEFINE_REVISION(struct, dynamic_array_traits, Revision::V0_0_0_0)
 {
     static constexpr size_t k_reference_bit = 1;
     static constexpr size_t k_capacity_shift = 1;

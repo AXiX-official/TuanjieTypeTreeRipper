@@ -328,27 +328,38 @@ class DumpedTypeTreeWriter
 
         IF_HAS_MEMBER_PTR(rtti, classNamespace)
         {
-            dumpedRtti.ClassNamespace = rtti->classNamespace;
+            // Older builds leave the namespace null for global-namespace types.
+            if (rtti->classNamespace != nullptr)
+                dumpedRtti.ClassNamespace = rtti->classNamespace;
         }
 
         IF_HAS_MEMBER_PTR(rtti, module)
         {
-            dumpedRtti.Module = rtti->module;
+            if (rtti->module != nullptr)
+                dumpedRtti.Module = rtti->module;
         }
 
         // NOTE: Do we also want to output attributes?
     }
 
-    static void ConvertNode(const TypeTreeNode& node, DumpedTypeTreeNode& dumpedNode, char const* stringBuffer, char const* commonStringBuffer)
+    static void ConvertNode(const TypeTreeNode& node, DumpedTypeTreeNode& dumpedNode, char const* stringBuffer, size_t stringBufferSize, char const* commonStringBuffer)
     {
-        const auto getStringBufferString = [stringBuffer, commonStringBuffer](const uint32_t offset) -> std::string
+        const auto getStringBufferString = [stringBuffer, stringBufferSize, commonStringBuffer](const uint32_t offset) -> std::string
         {
-            if ((offset & 0x80000000) == 0)
+            if ((offset & 0x80000000) != 0)
             {
-                return { stringBuffer + offset };
+                if (commonStringBuffer == nullptr)
+                    return {};
+
+                return { commonStringBuffer + (offset & ~0x80000000u) };
             }
-            
-            return { commonStringBuffer + (offset & ~0x80000000) };
+
+            // A transfer that never ran leaves a one-node tree with a null
+            // string buffer; do not dereference it.
+            if (stringBuffer == nullptr || offset >= stringBufferSize)
+                return {};
+
+            return { stringBuffer + offset };
         };
 
         dumpedNode = {};
@@ -428,7 +439,7 @@ public:
             dumpedTree.Nodes = std::vector<DumpedTypeTreeNode>(nodes.size());
             for (size_t i = 0; i < nodes.size(); i++)
             {
-                ConvertNode(nodes[i], dumpedTree.Nodes[i], stringBuffer.data(), commonStringBuffer);
+                ConvertNode(nodes[i], dumpedTree.Nodes[i], stringBuffer.data(), stringBuffer.size(), commonStringBuffer);
             }
         }
 
@@ -453,3 +464,4 @@ public:
 private:
     std::vector<DumpedTypeTree> TypeTrees;
 };
+

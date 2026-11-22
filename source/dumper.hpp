@@ -6,6 +6,8 @@
 #include <functional>
 #include <algorithm>
 #include <ranges>
+#include <cstring>
+#include <new>
 
 #include "MemLabelId.hpp"
 #include "Object.hpp"
@@ -35,12 +37,76 @@ class Dumper : public IDumper
 
     using DumpedTypeTreeWriter = ::DumpedTypeTreeWriter<R, V>;
 
+    MemLabelId MakeLabel()
+    {
+        MemLabelId label = {};
+
+        if constexpr (requires { label.m_RootReferenceWithSalt; })
+        {
+            // The engine's own MemLabelId for type trees, taken from the static
+            // it passes to TypeTree::TypeTree(MemLabelId const&):
+            // { identifier = 0x55, salt = 0, root = -1 }.
+            label.identifier = 0x55;
+            label.m_RootReferenceWithSalt.m_Salt = 0;
+            label.m_RootReferenceWithSalt.m_RootReferenceIndex = 0xFFFFFFFF;
+        }
+        else
+        {
+            label.identifier = 0x55;
+        }
+
+        return label;
+    }
+
+    // Fallback for builds where the engine vftable could not be located: the
+    // engine sometimes calls a virtual on the transfer object (Mesh::Transfer in
+    // 1.5.2 / 1.6.0) and ignores the result, so a table of no-ops is harmless -
+    // and far better than calling through our own C++ vtable.
+    static void TransferVirtualNoOp() {}
+
+    static void *const *FallbackTransferVtable()
+    {
+        static void *const kEntries[] = {
+            reinterpret_cast<void *>(&TransferVirtualNoOp),
+            reinterpret_cast<void *>(&TransferVirtualNoOp),
+            reinterpret_cast<void *>(&TransferVirtualNoOp),
+            reinterpret_cast<void *>(&TransferVirtualNoOp),
+        };
+        return kEntries;
+    }
+
+    void RedirectTransfer(Object *object, GenerateTypeTreeTransfer &transfer)
+    {
+        object->VirtualRedirectTransfer(transfer);
+    }
+
     bool IsValidPointer(void const *ptr, const size_t size, const uint8_t expectedProtection = ExecutableSection::kSectionProtectionRead)
     {
         return std::ranges::any_of(PlatformImpl.GetExecutableSections(), [&](const ExecutableSection &section)
         {
             return section.IsValidPointer(ptr, size, expectedProtection);
         });
+    }
+
+    bool IsValidClassName(char const *className)
+    {
+        if (!IsValidPointer(className, 1))
+            return false;
+
+        for (size_t i = 0; i < 256; i++)
+        {
+            if (!IsValidPointer(className + i, 1))
+                return false;
+
+            const auto c = static_cast<unsigned char>(className[i]);
+            if (c == 0)
+                return i > 0;
+
+            if (c < 0x20 || c > 0x7E)
+                return false;
+        }
+
+        return false;
     }
 
     bool StringEquals(char const *p, const std::string_view other)
@@ -59,7 +125,7 @@ class Dumper : public IDumper
         if (!IsValidPointer(pArray, sizeof(RuntimeTypeArray)))
             return false;
 
-        if constexpr (R >= Revision::V5_2_0)
+        if constexpr (R >= Revision::V2022_3_0_0)
         {
             if (pArray->Count < 2 || pArray->Count > pArray->Types.size())
                 return false;
@@ -86,6 +152,26 @@ class Dumper : public IDumper
             if (!StringEquals(pArray->Types[0]->className, "Object"))
                 return false;
 
+            for (int i = 0; i < pArray->Count; i++)
+            {
+                auto const *pRTTI = pArray->Types[i];
+
+                if (!IsValidPointer(pRTTI, sizeof(RTTI)))
+                    return false;
+
+                if (!IsValidClassName(pRTTI->className))
+                    return false;
+
+                if (pRTTI->factory != nullptr
+                    && !IsValidPointer(reinterpret_cast<void const *>(pRTTI->factory), 1, ExecutableSection::kSectionProtectionExecute))
+                {
+                    return false;
+                }
+
+                if (pRTTI->base != nullptr && !IsValidPointer(pRTTI->base, sizeof(RTTI)))
+                    return false;
+            }
+
             return true;
         }
 
@@ -98,11 +184,6 @@ class Dumper : public IDumper
 
         for (const auto &section : PlatformImpl.GetExecutableSections() | std::views::filter([](const ExecutableSection &x)
         {
-            // The runtime type array is initialized at runtime, if the section
-               // is not writable then it can not contain the runtime type array.
-            if ((x.Protection & ExecutableSection::kSectionProtectionWrite) == 0)
-                return false;
-
             if ((x.Protection & ExecutableSection::kSectionProtectionRead) == 0)
                 return false;
 
@@ -154,9 +235,15 @@ class Dumper : public IDumper
 public:
     void Run() override
     {
-        PlatformImpl.DebugLog("Dumper started");
+        {
+            char banner[96];
+            std::snprintf(banner, sizeof(banner),
+                "Dumper started (transfer vftable=0x%llX)",
+                static_cast<unsigned long long>(typetree_ripper::g_TransferVftable));
+            PlatformImpl.DebugLog(banner);
+        }
 
-        if constexpr (R >= Revision::V5_2_0)
+        if constexpr (R >= Revision::V2022_3_0_0)
         {
             auto pArray = GetRuntimeTypeArray();
             auto pTable = GetCommonStringBuffer();
@@ -169,7 +256,7 @@ public:
 
                     RTTI *pRTTI = pArray->Types[i];
 
-                    MemLabelId label;
+                    const auto label = MakeLabel();
                     TypeTreeShareableData data(label);
                     TypeTree tree(&data, label);
 
@@ -179,9 +266,22 @@ public:
                         object = pRTTI->factory(label, kCreateObjectDefault);
                         // "THX_Proxy" (what is this) can't be created, so it returns nothing.
                         // but it also is not abstract, curious!
-                        if (object) {
+                        if (object)
+                        {
                             GenerateTypeTreeTransfer transfer(tree, flags, object, pRTTI->size);
-                            object->VirtualRedirectTransfer(transfer);
+
+                            *reinterpret_cast<void **>(&transfer) =
+                                typetree_ripper::g_TransferVftable != 0
+                                    ? reinterpret_cast<void *>(typetree_ripper::g_TransferVftable)
+                                    : const_cast<void **>(FallbackTransferVtable());
+
+                            RedirectTransfer(object, transfer);
+
+                            char state[256];
+                            std::snprintf(state, sizeof(state), "  tree: nodes=%zu strings=%zu",
+                                static_cast<size_t>(tree.Nodes().size()),
+                                static_cast<size_t>(tree.StringsBuffer().size()));
+                            PlatformImpl.DebugLog(state);
                         }
                     }
 
@@ -247,4 +347,3 @@ void RunDumper(const Revision revision, const Variant variant)
 
     return DumperVariantInstances<TPlatformImpl>[intVariant][intRevision]->Run();
 }
-

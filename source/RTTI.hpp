@@ -9,12 +9,7 @@ class Object;
 template<Revision R, Variant V>
 struct RTTI;
 
-DECLARE_REVISION(RTTI, Revision::V5_0_0);
-DECLARE_REVISION(RTTI, Revision::V5_1_0);
-DECLARE_REVISION(RTTI, Revision::V5_2_0);
-DECLARE_REVISION(RTTI, Revision::V5_4_0);
-DECLARE_REVISION(RTTI, Revision::V5_5_0);
-DECLARE_REVISION(RTTI, Revision::V2017_3_0);
+DECLARE_REVISION(RTTI, Revision::V2022_3_0_0);
 
 //
 // 3.x & 4.x
@@ -32,99 +27,17 @@ struct RTTI
     bool isAbstract;
 };
 
-//
-// 5.0
-//
-
-DEFINE_REVISION(struct, RTTI, Revision::V5_0_0)
-{
-    RTTI *base;
-    Object<R, V> *(*factory)(MemLabelId<R, V>, ObjectCreationMode);
-    int32_t persistentTypeID;
-    std::string className;
-    int32_t size;
-    bool isAbstract;
-    bool isSealed;
-};
-
-//
-// 5.1
-//
-
-DEFINE_REVISION(struct, RTTI, Revision::V5_1_0)
-{
-    RTTI *base;
-    Object<R, V> *(*factory)(MemLabelId<R, V>, ObjectCreationMode);
-    int32_t persistentTypeID;
-    std::string className;
-    int32_t size;
-    bool isAbstract;
-    bool isSealed;
-    bool isDeprecated;
-};
-
-//
-// 5.2
-//
-
-DEFINE_REVISION(struct, RTTI, Revision::V5_2_0)
-{
-    RTTI *base;
-    Object<R, V> *(*factory)(MemLabelId<R, V>, ObjectCreationMode);
-    int32_t persistentTypeID;
-    char const *className;
-    int32_t size;
-    bool isAbstract;
-    bool isSealed;
-    bool isDeprecated;
-};
-
-//
-// 5.4
-//
-
 struct DerivedFromInfo
 {
     uint32_t typeIndex;
     uint32_t descendantCount;
 };
 
-DEFINE_REVISION(struct, RTTI, Revision::V5_4_0)
-{
-    RTTI *base;
-    Object<R, V> *(*factory)(MemLabelId<R, V>, ObjectCreationMode);
-    int32_t persistentTypeID;
-    char const *className;
-    int32_t size;
-    DerivedFromInfo derivedFromInfo;
-    bool isAbstract;
-    bool isSealed;
-    bool isEditorOnly;
-};
-
-//
-// 5.5
-//
-
-DEFINE_REVISION(struct, RTTI, Revision::V5_5_0)
-{
-    RTTI *base;
-    Object<R, V> *(*factory)(MemLabelId<R, V>, ObjectCreationMode);
-    char const *className;
-    char const *classNamespace;
-    int32_t persistentTypeID;
-    int32_t size;
-    DerivedFromInfo derivedFromInfo;
-    bool isAbstract;
-    bool isSealed;
-    bool isEditorOnly;
-};
-
 //
 // 2017.3
 //
 
-DEFINE_REVISION(struct, RTTI, Revision::V2017_3_0)
+DEFINE_REVISION(struct, RTTI, Revision::V2022_3_0_0)
 {
     RTTI *base;
     Object<R, V> *(*factory)(MemLabelId<R, V>, ObjectCreationMode);

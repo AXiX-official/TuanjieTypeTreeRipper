@@ -98,7 +98,7 @@ private:
 
 namespace
 {
-    auto DetectedRevision = Revision::V0_0_0;
+    auto DetectedRevision = Revision::V0_0_0_0;
     auto DetectedVariant = Variant::Runtime;
 
     decltype(&__android_log_print) original_android_log_print;

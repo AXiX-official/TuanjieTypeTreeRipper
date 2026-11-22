@@ -2,6 +2,7 @@
 #include <array>
 #include <optional>
 #include <sstream>
+#include <tuple>
 #include <utility>
 
 #define FOR_EACH_VARIANT(X) \
@@ -57,6 +58,28 @@ std::optional<Variant> VariantStringToVariant(const StringViewType name)
     }
 }
 
+// Windows paths are case insensitive but the engine names we compare against are
+// not: launching "tuanjie.exe" yields exactly that in the module path, so an
+// exact comparison against "Tuanjie.exe" fails and DetectVariant() aborts.
+inline bool EqualsIgnoreCase(const std::string_view left, const std::string_view right)
+{
+    if (left.size() != right.size())
+        return false;
+
+    for (size_t i = 0; i < left.size(); i++)
+    {
+        const auto lower = [](const char c)
+        {
+            return static_cast<char>(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+        };
+
+        if (lower(left[i]) != lower(right[i]))
+            return false;
+    }
+
+    return true;
+}
+
 inline std::optional<Variant> ExecutableNameToVariant(const std::string_view name)
 {
     constexpr std::array kExecutableVariants = {
@@ -67,7 +90,7 @@ inline std::optional<Variant> ExecutableNameToVariant(const std::string_view nam
 
     for (const auto& [executableName, variant] : kExecutableVariants)
     {
-        if (name == executableName)
+        if (EqualsIgnoreCase(name, executableName))
         {
             return variant;
         }
@@ -90,44 +113,34 @@ inline std::string_view VariantToString(const Variant variant)
 #undef FOR_EACH_VARIANT
 
 #define FOR_EACH_REVISION(X) \
-    X(0, 0, 0) \
-    X(5, 0, 0) \
-    X(5, 1, 0) \
-    X(5, 2, 0) \
-    X(5, 4, 0) \
-    X(5, 5, 0) \
-    X(2017, 1, 0) \
-    X(2017, 3, 0) \
-    X(2017, 4, 0) \
-    X(2017, 4, 18) \
-    X(2017, 4, 30) \
-    X(2018, 2, 0) \
-    X(2018, 3, 0) \
-    X(2019, 1, 0) \
-    X(2019, 2, 0) \
-    X(2019, 3, 0) \
-    X(2019, 4, 0) \
-    X(2019, 4, 34) \
-    X(2019, 4, 40) \
-    X(2021, 1, 0) \
-    X(2021, 3, 0) \
-    X(2022, 1, 0) \
-    X(2022, 2, 0) \
-    X(2022, 3, 0) \
-    X(2023, 1, 0) \
-    X(6000, 5, 0) \
-    X(6000, 6, 0)
+    X(0, 0, 0, 0) \
+    X(2022, 3, 0, 0) \
+    X(2022, 3, 2, 0) \
+    X(2022, 3, 2, 8) \
+    X(2022, 3, 2, 17) \
+    X(2022, 3, 27, 0) \
+    X(2022, 3, 61, 1) \
+    X(2022, 3, 61, 2) \
+    X(2022, 3, 62, 0) \
+    X(2022, 3, 62, 8) \
+    X(2023, 1, 0, 0) \
+    X(6000, 5, 0, 0)
 
 enum class Revision
 {
-#define DEFINE_REVISION_ENUM_ENTRY(major, minor, patch) V##major##_##minor##_##patch,
+#define DEFINE_REVISION_ENUM_ENTRY(major, minor, patch, build) V##major##_##minor##_##patch##_##build,
     FOR_EACH_REVISION(DEFINE_REVISION_ENUM_ENTRY)
 #undef DEFINE_REVISION_ENUM_ENTRY
 
     Count,
 };
 
-using RevisionVersion = std::tuple<uint16_t, uint8_t, uint8_t>;
+// Full layout identity, including the Tuanjie "tN" counter.
+using RevisionVersion = std::tuple<uint16_t, uint8_t, uint8_t, uint16_t>;
+
+// What the .ttbin header records: the 4th element is a layout discriminator, not
+// part of the asset version number.
+using RevisionRelease = std::tuple<uint16_t, uint8_t, uint8_t>;
 
 template <typename StringType, typename StringStreamType, auto Delimiter>
 RevisionVersion ParseVersionString(const StringType &value)
@@ -160,24 +173,44 @@ RevisionVersion ParseVersionString(const StringType &value)
 
     const auto patch = static_cast<uint8_t>(std::stoi(versionComponent.substr(0, patchEndIndex)));
 
-    return std::make_tuple(major, minor, patch);
+    // Only Tuanjie's "t" counter separates builds that share major.minor.patch
+    // (2022.3.2t5 vs 2022.3.2t8). Unity's "f"/"p"/"b" suffixes are release
+    // counters of the *same* layout, so they stay at build == 0 - otherwise
+    // 2022.3.61f1 and 2022.3.61f6 would split into different buckets.
+    uint16_t build = 0;
+
+    if (patchEndIndex < versionComponent.size() && versionComponent[patchEndIndex] == 't')
+    {
+        auto buildEndIndex = patchEndIndex + 1;
+
+        while (buildEndIndex < versionComponent.size() && versionComponent[buildEndIndex] - '0' <= 9)
+            buildEndIndex++;
+
+        if (buildEndIndex > patchEndIndex + 1)
+        {
+            build = static_cast<uint16_t>(std::stoi(
+                versionComponent.substr(patchEndIndex + 1, buildEndIndex - patchEndIndex - 1)));
+        }
+    }
+
+    return std::make_tuple(major, minor, patch, build);
 }
 
-inline std::optional<Revision> VersionToRevision(const uint16_t major, const uint8_t minor, const uint8_t patch)
+inline std::optional<Revision> VersionToRevision(const uint16_t major, const uint8_t minor, const uint8_t patch,
+    const uint16_t build = 0)
 {
     constexpr std::array kRevisionVersions = {
-#define DEFINE_REVISION_VERSION_ENTRY(major, minor, patch) std::make_tuple(major, minor, patch, Revision::V##major##_##minor##_##patch), 
+#define DEFINE_REVISION_VERSION_ENTRY(major, minor, patch, build) std::make_tuple(major, minor, patch, build, Revision::V##major##_##minor##_##patch##_##build), 
         FOR_EACH_REVISION(DEFINE_REVISION_VERSION_ENTRY)
 #undef DEFINE_REVISION_VERSION_ENTRY
     };
 
     std::optional<Revision> versionRevision;
 
-    for (const auto &[revisionMajor, revisionMinor, revisionPatch, revision] : kRevisionVersions)
+    for (const auto &[revisionMajor, revisionMinor, revisionPatch, revisionBuild, revision] : kRevisionVersions)
     {
-        if (major > revisionMajor
-            || (major == revisionMajor && (minor > revisionMinor
-                || (minor == revisionMinor && patch >= revisionPatch))))
+        if (std::tie(revisionMajor, revisionMinor, revisionPatch, revisionBuild)
+            <= std::tie(major, minor, patch, build))
         {
             versionRevision = revision;
         }
@@ -201,14 +234,14 @@ std::optional<Revision> VersionStringToRevision(const StringType& value)
         versionComponents = ParseVersionString<std::wstring, std::basic_istringstream<wchar_t>, L'.'>(value);
     }
 
-    const auto& [major, minor, patch] = versionComponents;
-    return VersionToRevision(major, minor, patch);
+    const auto& [major, minor, patch, build] = versionComponents;
+    return VersionToRevision(major, minor, patch, build);
 }
 
-inline RevisionVersion RevisionToVersion(const Revision revision)
+inline RevisionRelease RevisionToVersion(const Revision revision)
 {
     constexpr std::array kRevisionVersions = {
-#define DEFINE_REVISION_VERSION_TUPLE_ENTRY(major, minor, patch) std::make_tuple<uint16_t, uint8_t, uint8_t>(major, minor, patch), 
+#define DEFINE_REVISION_VERSION_TUPLE_ENTRY(major, minor, patch, build) std::make_tuple<uint16_t, uint8_t, uint8_t>(major, minor, patch), 
         FOR_EACH_REVISION(DEFINE_REVISION_VERSION_TUPLE_ENTRY)
 #undef DEFINE_REVISION_VERSION_TUPLE_ENTRY
     };
@@ -307,3 +340,12 @@ namespace details
             }; \
         }; \
     }
+
+//
+namespace typetree_ripper
+{
+    // Primary vftable of GenerateTypeTreeTransfer in the loaded engine, 0 when
+    // it could not be found. Written into the transfer object we build so that
+    // an engine virtual call on it lands in engine code instead of our vtable.
+    inline uintptr_t g_TransferVftable = 0;
+}

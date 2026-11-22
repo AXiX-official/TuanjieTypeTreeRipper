@@ -16,18 +16,18 @@ class TypeTreeIterator;
 template<Revision R, Variant V>
 struct TypeTreeShareableData;
 
-DECLARE_REVISION(TypeTree, Revision::V2019_1_0);
-DECLARE_REVISION(TypeTree, Revision::V2019_3_0);
-DECLARE_REVISION(TypeTreeNode, Revision::V2019_1_0);
-DECLARE_REVISION(TypeTreeIterator, Revision::V2019_1_0);
-DECLARE_REVISION(TypeTreeShareableData, Revision::V2019_2_0);
-DECLARE_REVISION(TypeTreeShareableData, Revision::V2022_3_0);
+DECLARE_REVISION(TypeTree, Revision::V2022_3_0_0);
+DECLARE_REVISION(TypeTreeNode, Revision::V2022_3_0_0);
+DECLARE_REVISION(TypeTreeIterator, Revision::V2022_3_0_0);
+DECLARE_REVISION(TypeTreeIterator, Revision::V2022_3_2_0);
+DECLARE_REVISION(TypeTreeIterator, Revision::V2022_3_61_1);
+DECLARE_REVISION(TypeTreeShareableData, Revision::V2022_3_0_0);
 
 DEFINE_ENUM(TransferInstructionFlags, int32_t,
     kNone = 0,
     kSerializeGameRelease = 0x0100);
 
-DEFINE_ENUM_REVISION(TransferInstructionFlags, uint64_t, Revision::V2021_1_0,
+DEFINE_ENUM_REVISION(TransferInstructionFlags, uint64_t, Revision::V2022_3_0_0,
     kNone = 0,
     kSerializeGameRelease = 0x0100);
 
@@ -162,34 +162,7 @@ public:
     }
 };
 
-DEFINE_REVISION(class, TypeTree, Revision::V2019_1_0)
-{
-    TypeTreeShareableData<R, V> *m_Data;
-    TypeTreeShareableData<R, V> m_PrivateData;
-public:
-    TypeTree(TypeTreeShareableData<R, V> *sharedType, MemLabelId<R, V> const &label) :
-        m_Data(sharedType),
-        m_PrivateData(label)
-    {
-    }
-
-    TypeTreeShareableData<R, V> *GetData() const
-    {
-        return m_Data;
-    }
-
-    dynamic_array<R, V>::template type<TypeTreeNode<R, V>> const &Nodes() const
-    {
-        return GetData()->Nodes();
-    }
-
-    dynamic_array<R, V>::template type<char> const &StringsBuffer() const
-    {
-        return GetData()->StringsBuffer();
-    }
-};
-
-DEFINE_REVISION(struct, TypeTreeNode, Revision::V2019_1_0)
+DEFINE_REVISION(struct, TypeTreeNode, Revision::V2022_3_0_0)
 {
     using TransferMetaFlags = ::TransferMetaFlags<R, V>;
 
@@ -212,12 +185,51 @@ DEFINE_REVISION(struct, TypeTreeNode, Revision::V2019_1_0)
     };
 };
 
-DEFINE_REVISION(class, TypeTreeIterator, Revision::V2019_1_0)
+DEFINE_REVISION(class, TypeTreeIterator, Revision::V2022_3_0_0)
+{
+    TypeTree<R, V> const *m_LinkedTypeTree;
+    TypeTreeShareableData<R, V> const *m_TypeTreeData;
+    uint64_t m_Reserved;
+    uint64_t m_NodeIndex;
+public:
+    TypeTreeIterator(TypeTree<R, V> const *tree, TypeTreeShareableData<R, V> const *data, uint64_t nodeIndex) :
+        m_LinkedTypeTree(tree),
+        m_TypeTreeData(data),
+        m_Reserved(0),
+        m_NodeIndex(nodeIndex)
+    {
+    }
+};
+
+//
+// 2022.3.61 (Tuanjie 1.6.x) uses the four-field iterator again.
+//
+
+DEFINE_REVISION(class, TypeTreeIterator, Revision::V2022_3_61_1)
+{
+    TypeTree<R, V> const *m_LinkedTypeTree;
+    TypeTreeShareableData<R, V> const *m_TypeTreeData;
+    uint64_t m_Reserved;
+    uint64_t m_NodeIndex;
+public:
+    TypeTreeIterator(TypeTree<R, V> const *tree, TypeTreeShareableData<R, V> const *data, uint64_t nodeIndex) :
+        m_LinkedTypeTree(tree),
+        m_TypeTreeData(data),
+        m_Reserved(0),
+        m_NodeIndex(nodeIndex)
+    {
+    }
+};
+
+static_assert(sizeof(TypeTreeIterator<Revision::V2022_3_61_1, Variant::Editor>) == 0x20,
+    "Tuanjie 1.6 iterator keeps the reserved slot");
+
+
+DEFINE_REVISION(class, TypeTreeIterator, Revision::V2022_3_2_0)
 {
     TypeTree<R, V> const *m_LinkedTypeTree;
     TypeTreeShareableData<R, V> const *m_TypeTreeData;
     uint64_t m_NodeIndex;
-    uint8_t padding[8];
 public:
     TypeTreeIterator(TypeTree<R, V> const *tree, TypeTreeShareableData<R, V> const *data, uint64_t nodeIndex) :
         m_LinkedTypeTree(tree),
@@ -228,48 +240,10 @@ public:
 };
 
 //
-// 2019.2
-//
-
-DEFINE_REVISION(class, TypeTreeShareableData, Revision::V2019_2_0)
-{
-    dynamic_array<R, V>::template type<TypeTreeNode<R, V>> m_Nodes;
-    dynamic_array<R, V>::template type<char> m_StringBuffer;
-    dynamic_array<R, V>::template type<uint32_t> m_ByteOffsets;
-    TransferInstructionFlags<R, V> m_FlagsAtGeneration = {};
-    std::atomic<int> m_RefCount = 1;
-    MemLabelId<R, V> const &m_MemLabel;
-public:
-    explicit TypeTreeShareableData(MemLabelId<R, V> const &label) :
-        m_Nodes(label, 1),
-        m_StringBuffer(label),
-        m_ByteOffsets(label),
-        m_MemLabel(label)
-    {
-        new(&m_Nodes[0]) TypeTreeNode<R, V>;
-    }
-
-    void SetGenerationFlags(TransferInstructionFlags<R, V> options)
-    {
-        m_FlagsAtGeneration = options;
-    }
-
-    dynamic_array<R, V>::template type<TypeTreeNode<R, V>> const &Nodes() const
-    {
-        return m_Nodes;
-    }
-
-    dynamic_array<R, V>::template type<char> const &StringsBuffer() const
-    {
-        return m_StringBuffer;
-    }
-};
-
-//
 // 2019.3
 //
 
-DEFINE_REVISION(class, TypeTree, Revision::V2019_3_0)
+DEFINE_REVISION(class, TypeTree, Revision::V2022_3_0_0)
 {
     class Pool;
     TypeTreeShareableData<R, V> *m_Data;
@@ -301,7 +275,7 @@ public:
 // 2022.3
 //
 
-DEFINE_REVISION(class, TypeTreeShareableData, Revision::V2022_3_0)
+DEFINE_REVISION(class, TypeTreeShareableData, Revision::V2022_3_0_0)
 {
     dynamic_array<R, V>::template type<TypeTreeNode<R, V>> m_Nodes;
     dynamic_array<R, V>::template type<uint8_t> m_Levels;
@@ -310,7 +284,7 @@ DEFINE_REVISION(class, TypeTreeShareableData, Revision::V2022_3_0)
     dynamic_array<R, V>::template type<uint32_t> m_ByteOffsets;
     TransferInstructionFlags<R, V> m_FlagsAtGeneration = {};
     std::atomic<int> m_RefCount = 1;
-    MemLabelId<R, V> m_MemLabel;
+    MemLabelId<R, V> const *m_MemLabel;
 public:
     explicit TypeTreeShareableData(MemLabelId<R, V> const &label) :
         m_Nodes(label, 1),
@@ -318,7 +292,7 @@ public:
         m_NextIndex(label, 1),
         m_StringBuffer(label),
         m_ByteOffsets(label),
-        m_MemLabel(label)
+        m_MemLabel(&label)
     {
         new(&m_Nodes[0]) TypeTreeNode<R, V>;
         m_Levels[0] = 0;
