@@ -13,7 +13,11 @@ public static class StructDumpTextOutput
 
     private static void Output(TypeTreeBinary binary, StreamWriter writer)
     {
-        var typesByTypeId = binary.TypeTrees.ToDictionary(x => x.RTTI.PersistentTypeId);
+        // editor.ttbin carries both passes, so ids repeat; only the base-class lookup
+        // uses this map, so keeping the first entry is enough.
+        var typesByTypeId = binary.TypeTrees
+            .GroupBy(x => x.RTTI.PersistentTypeId)
+            .ToDictionary(g => g.Key, g => g.First());
 
         foreach (var type in binary.TypeTrees.OrderBy(x => x.RTTI.PersistentTypeId))
         {

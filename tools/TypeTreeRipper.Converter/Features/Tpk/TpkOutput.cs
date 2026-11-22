@@ -34,6 +34,37 @@ public static class TpkOutput
         Console.WriteLine($"TPK with {compressionType} compression saved to {outputPath}");
     }
 
+    /// <summary>
+    /// AssetRipper's UnityVersion has no Tuanjie "tN" suffix, and
+    /// UnityVersion.Parse("2022.3.2t5") silently yields 2022.3.2f1, which would
+    /// collapse every 2022.3.2tN build into one version. Encode the Tuanjie
+    /// counter instead: "tN" becomes release N ("2022.3.2f5"), and the "tNbM"
+    /// branch becomes a patch release ("2022.3.62p6").
+    /// </summary>
+    private static UnityVersion ParseVersion(string name)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            name, @"^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:t(?<t>\d+)(?:b(?<b>\d+))?)?$");
+
+        if (!match.Success || !match.Groups["t"].Success)
+        {
+            return UnityVersion.Parse(name);
+        }
+
+        var major = ushort.Parse(match.Groups["major"].Value);
+        var minor = byte.Parse(match.Groups["minor"].Value);
+        var patch = byte.Parse(match.Groups["patch"].Value);
+        var t = byte.Parse(match.Groups["t"].Value);
+
+        if (match.Groups["b"].Success)
+        {
+            return new UnityVersion(major, minor, patch, UnityVersionType.Patch,
+                byte.Parse(match.Groups["b"].Value));
+        }
+
+        return new UnityVersion(major, minor, patch, UnityVersionType.Final, t);
+    }
+
     private static IEnumerable<(UnityVersion, TypeTreeBinary)> GetOrderedBinariesByVersion(string directoryPath)
     {
         var info = new DirectoryInfo(directoryPath);
@@ -53,7 +84,7 @@ public static class TpkOutput
                 {
                     if (version == default)
                     {
-                        version = UnityVersion.Parse(directory.Name);
+                        version = ParseVersion(directory.Name);
                     }
 
                     if (files.TryGetValue(version, out var fileList))
@@ -92,7 +123,12 @@ public static class TpkOutput
             }
 
             Console.WriteLine(fullVersion);
-            blob.Versions.Add(fullVersion);
+            // Two .ttbin files can belong to one version (release + editor); the
+            // version list must not repeat them.
+            if (!blob.Versions.Contains(fullVersion))
+            {
+                blob.Versions.Add(fullVersion);
+            }
 
             var conversionContext = new TpkConversionContext(typeTreeBinary);
             foreach (var typeTree in typeTreeBinary.TypeTrees)

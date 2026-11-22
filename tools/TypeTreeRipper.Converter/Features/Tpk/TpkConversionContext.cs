@@ -12,7 +12,11 @@ public class TpkConversionContext
 	public TpkConversionContext(TypeTreeBinary binary)
 	{
 		_binary = binary;
-		_typeTreesByTypeId = _binary.TypeTrees.ToDictionary(x => x.RTTI.PersistentTypeId, x => x);
+		// editor.ttbin carries both passes, so a type id appears twice; the dictionary
+// is only used to resolve base class names, so either entry will do.
+		_typeTreesByTypeId = _binary.TypeTrees
+			.GroupBy(x => x.RTTI.PersistentTypeId)
+			.ToDictionary(g => g.Key, g => g.First());
 	}
 
 	public TpkUnityClass Convert(DumpedTypeTree typeTree, TpkStringBuffer stringBuffer, TpkUnityNodeBuffer nodeBuffer)
